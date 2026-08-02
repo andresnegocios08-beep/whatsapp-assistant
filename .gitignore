@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.env
+*.log
+*.db
+*.sqlite
+.DS_Store
+data/sessions/
+data/*.json
+config/negocios/*/secrets/
