@@ -54,10 +54,58 @@ class IntentMatcher:
         }
     
     def classify(self, message: str) -> Dict[str, any]:
-        """Clasifica la intención del mensaje"""
-        normalized = self.normalizer.normalize(message)
-        keywords = self.normalizer.extract_keywords(normalized)
-        entities = self.normalizer.extract_entities(normalized)
+    """
+    Clasifica la intención del mensaje
+    """
+    # Normalizar mensaje
+    normalized = self.normalizer.normalize(message)
+    keywords = self.normalizer.extract_keywords(normalized)
+    
+    # Debug
+    print(f"🔍 Mensaje normalizado: '{normalized}'")
+    print(f"🔍 Palabras clave extraídas: {keywords}")
+    
+    # Buscar coincidencias DIRECTAS
+    for intent_name, intent_data in self.intents.items():
+        for keyword in intent_data['keywords']:
+            if keyword in normalized:
+                print(f"✅ Coincidencia encontrada: '{keyword}' -> {intent_name}")
+                return {
+                    'intent': intent_name,
+                    'confidence': 1.0,
+                    'entities': {},
+                    'normalized': normalized
+                }
+    
+    # Si no hay coincidencia directa, buscar coincidencia parcial
+    best_intent = 'fallback'
+    max_score = 0
+    
+    for intent_name, intent_data in self.intents.items():
+        score = 0
+        for keyword in intent_data['keywords']:
+            # Buscar coincidencia parcial
+            for word in keywords:
+                if keyword in word or word in keyword:
+                    score += 1
+                    print(f"🔍 Coincidencia parcial: '{keyword}' en '{word}' -> {intent_name}")
+        
+        if score > max_score:
+            max_score = score
+            best_intent = intent_name
+    
+    # Si score es muy bajo, usar fallback
+    if max_score < 0.1:
+        best_intent = 'fallback'
+    
+    print(f"📊 Intención final: {best_intent} (score: {max_score})")
+    
+    return {
+        'intent': best_intent,
+        'confidence': max_score / 10 if max_score > 0 else 0.1,
+        'entities': {},
+        'normalized': normalized
+    }
         
         best_intent = 'fallback'
         max_score = 0
