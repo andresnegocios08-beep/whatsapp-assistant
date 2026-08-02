@@ -1,176 +1,131 @@
 from flask import Flask, jsonify, request
 from twilio.twiml.messaging_response import MessagingResponse
 import re
-<<<<<<< HEAD
-=======
-import os
->>>>>>> 78e66f68f01fd62456385f727dca9e7918acc7ce
 
 app = Flask(__name__)
 
 # ============================================
-<<<<<<< HEAD
-# GESTOR DE CONVERSACIONES (MÁS ROBUSTO)
+# CONTEXTO EN MEMORIA
 # ============================================
 
-conversaciones = {}
-
-def obtener_estado(user_id):
-    """Obtiene el estado de la conversación de un usuario"""
-    if user_id not in conversaciones:
-        conversaciones[user_id] = {
-            "ultimo_mensaje": None,
-            "intencion_actual": None,
-            "categoria": None,
-            "esperando": None
-        }
-    return conversaciones[user_id]
-
-def guardar_estado(user_id, clave, valor):
-    estado = obtener_estado(user_id)
-    estado[clave] = valor
-    print(f"💾 {user_id}: {clave} = {valor}")
-
-def limpiar_estado(user_id):
-    conversaciones[user_id] = {
-        "ultimo_mensaje": None,
-        "intencion_actual": None,
-        "categoria": None,
-        "esperando": None
-    }
-    print(f"🧹 Estado limpiado para {user_id}")
+contexto_usuarios = {}
 
 # ============================================
 # PROCESADOR DE MENSAJES
 # ============================================
 
 def procesar_mensaje(mensaje, user_id):
-    mensaje = mensaje.strip()
-    mensaje_lower = mensaje.lower()
+    mensaje = mensaje.lower().strip()
     
-    # Obtener estado actual
-    estado = obtener_estado(user_id)
-    esperando = estado.get("esperando")
-    intencion_actual = estado.get("intencion_actual")
+    # Obtener contexto del usuario
+    if user_id not in contexto_usuarios:
+        contexto_usuarios[user_id] = {
+            "ultima_intencion": None,
+            "categoria": None,
+            "paso": None
+        }
     
-    print(f"\n📩 '{mensaje}' | Esperando: {esperando} | Intención: {intencion_actual}")
-    
-    # ============================================
-    # CASO 1: ESPERANDO RESPUESTA DE CATEGORÍA
-    # ============================================
-    if esperando == "categoria":
-        if mensaje in ["1", "2", "3", "4"]:
-            categorias = {
-                "1": "Ropa Deportiva",
-                "2": "Accesorios",
-                "3": "Calzado",
-                "4": "Ofertas Especiales"
-            }
-            categoria = categorias[mensaje]
-            guardar_estado(user_id, "categoria", categoria)
-            guardar_estado(user_id, "esperando", "menu_categoria")
-            guardar_estado(user_id, "intencion_actual", "categoria_seleccionada")
-            
-            return f"✅ Has seleccionado: **{categoria}**\n\n📋 ¿Qué te gustaría hacer?\n\n1️⃣ Ver productos disponibles\n2️⃣ Pedir información sobre precios\n3️⃣ Volver al catálogo principal\n\n💡 Responde con el número de tu opción."
-        else:
-            return "⚠️ Por favor, responde con un **número del 1 al 4** para seleccionar la categoría."
+    ctx = contexto_usuarios[user_id]
+    ultima_intencion = ctx.get("ultima_intencion")
     
     # ============================================
-    # CASO 2: ESPERANDO OPCIÓN DEL MENÚ DE CATEGORÍA
+    # CASO: DESPUÉS DE CATÁLOGO (RESPUESTA CON NÚMERO)
     # ============================================
-    if esperando == "menu_categoria":
+    if ultima_intencion == "ventas" and mensaje in ["1", "2", "3", "4"]:
+        categorias = {
+            "1": "Ropa Deportiva",
+            "2": "Accesorios",
+            "3": "Calzado",
+            "4": "Ofertas Especiales"
+        }
+        categoria = categorias[mensaje]
+        ctx["ultima_intencion"] = "categoria_seleccionada"
+        ctx["categoria"] = categoria
+        
+        return f"✅ Has seleccionado: **{categoria}**\n\n📋 ¿Qué te gustaría hacer?\n\n1️⃣ Ver productos disponibles\n2️⃣ Pedir información sobre precios\n3️⃣ Volver al catálogo principal\n\n💡 Responde con el número de tu opción."
+    
+    # ============================================
+    # CASO: MENÚ DE CATEGORÍA
+    # ============================================
+    if ultima_intencion == "categoria_seleccionada":
         if mensaje == "1":
-            categoria = estado.get("categoria", "esta categoría")
-            guardar_estado(user_id, "esperando", None)
-            return f"📦 **Productos en {categoria}:**\n\nActualmente no tenemos el listado completo disponible por WhatsApp.\n\n🔍 ¿Buscas algo en particular? Escríbelo y te ayudo.\n\n💡 Escribe **'volver'** para regresar al catálogo."
+            ctx["ultima_intencion"] = None
+            return "📦 **Productos:**\n\nPara ver el catálogo completo, visita nuestro sitio web.\n\n🔍 ¿Buscas algo en particular? Dímelo y te ayudo.\n\n💡 Escribe 'volver' para regresar al catálogo."
         
         elif mensaje == "2":
-            guardar_estado(user_id, "esperando", None)
-            return "💰 **Información de precios:**\n\nPara obtener una cotización exacta, escríbenos el **nombre del producto** que te interesa.\n\n📋 Ejemplo: 'precio de la camisa deportiva'"
+            ctx["ultima_intencion"] = None
+            return "💰 **Información de precios:**\n\nPara cotizaciones específicas, escríbenos el nombre del producto que te interesa."
         
         elif mensaje == "3":
-            guardar_estado(user_id, "esperando", "categoria")
-            guardar_estado(user_id, "intencion_actual", "ventas")
-            return "🔄 Volviendo al catálogo...\n\n" + get_catalogo()
+            ctx["ultima_intencion"] = "ventas"
+            return "🔄 Volviendo al catálogo principal...\n\n" + get_catalogo()
         
-        elif "volver" in mensaje_lower or "atras" in mensaje_lower:
-            guardar_estado(user_id, "esperando", "categoria")
-            guardar_estado(user_id, "intencion_actual", "ventas")
-            return "🔄 Volviendo al catálogo...\n\n" + get_catalogo()
-        
-        else:
-            return "⚠️ Opción no válida.\n\n📋 Escribe:\n1️⃣ Para ver productos\n2️⃣ Para información de precios\n3️⃣ Para volver al catálogo"
-    
-    # ============================================
-    # CASO 3: ESPERANDO PRODUCTO PARA PRECIO
-    # ============================================
-    if esperando == "precio":
-        guardar_estado(user_id, "esperando", None)
-        return f"💰 **Cotización para '{mensaje}':**\n\nPara obtener el precio exacto, por favor contáctanos directamente:\n📱 WhatsApp: +57 301 234 5678\n📧 Email: info@tienda.com\n\n💡 ¿Necesitas algo más?"
+        elif "volver" in mensaje or "atras" in mensaje:
+            ctx["ultima_intencion"] = "ventas"
+            return "🔄 Volviendo al catálogo principal...\n\n" + get_catalogo()
     
     # ============================================
     # INTENCIÓN: CATÁLOGO
     # ============================================
-    if re.search(r'\b(catalogo|catálogo|producto|menu|muestrame|enseñar|ver productos|quiero comprar|lista|que venden|tienen)\b', mensaje_lower):
-        guardar_estado(user_id, "intencion_actual", "ventas")
-        guardar_estado(user_id, "esperando", "categoria")
-        guardar_estado(user_id, "categoria", None)
+    if re.search(r'\b(catalogo|catálogo|producto|menu|muestrame|enseñar|ver productos|quiero comprar|lista|que venden|tienen)\b', mensaje):
+        ctx["ultima_intencion"] = "ventas"
         return get_catalogo()
     
     # ============================================
     # INTENCIÓN: PRECIO
     # ============================================
-    if re.search(r'\b(precio|costo|valor|cuanto cuesta|precios|cotizar|cotizacion)\b', mensaje_lower):
-        guardar_estado(user_id, "esperando", "precio")
-        return "💰 **Cotizaciones:**\n\n📋 Escríbenos el **nombre del producto** que deseas cotizar.\n\nEjemplo: 'camisa deportiva'"
+    if re.search(r'\b(precio|costo|valor|cuanto cuesta|precios|cotizar|cotizacion)\b', mensaje):
+        ctx["ultima_intencion"] = "precio"
+        return "💰 Te ayudo con los precios.\n\n📋 Escribe el **nombre del producto** que te interesa."
     
     # ============================================
     # INTENCIÓN: HORARIO
     # ============================================
-    if re.search(r'\b(horario|abren|cierran|atencion|hora|cuando abren|disponibilidad|horas)\b', mensaje_lower):
+    if re.search(r'\b(horario|abren|cierran|atencion|hora|cuando abren|disponibilidad|horas)\b', mensaje):
         return "🕐 **Horario de atención:**\n\n📅 Lunes a Viernes: 8:00 AM - 6:00 PM\n📅 Sábados: 9:00 AM - 2:00 PM\n📅 Domingos: Cerrado"
     
     # ============================================
     # INTENCIÓN: CONTACTO
     # ============================================
-    if re.search(r'\b(telefono|correo|email|direccion|ubicacion|contacto|whatsapp|llamar|donde estan)\b', mensaje_lower):
+    if re.search(r'\b(telefono|correo|email|direccion|ubicacion|contacto|whatsapp|llamar|donde estan)\b', mensaje):
         return "📞 **Información de contacto:**\n\n📱 Teléfono: +57 301 234 5678\n📧 Email: info@tienda.com\n📍 Dirección: Calle 123 #45-67, Bogotá"
     
     # ============================================
     # INTENCIÓN: QUEJA
     # ============================================
-    if re.search(r'\b(problema|reclamo|queja|error|falla|no funciona|devolucion|dañado|insatisfecho|malo)\b', mensaje_lower):
+    if re.search(r'\b(problema|reclamo|queja|error|falla|no funciona|devolucion|dañado|insatisfecho|malo)\b', mensaje):
         return "📞 Lamento escuchar eso. Voy a escalar tu caso a un agente especializado.\n\n⏳ Por favor, espera un momento."
     
     # ============================================
     # INTENCIÓN: AGENTE
     # ============================================
-    if re.search(r'\b(agente|asesor|persona|humano|hablar con alguien|representante)\b', mensaje_lower):
+    if re.search(r'\b(agente|asesor|persona|humano|hablar con alguien|representante)\b', mensaje):
         return "👤 Te voy a conectar con un agente humano.\n\n⏳ Por favor, espera un momento."
     
     # ============================================
     # INTENCIÓN: SALUDO
     # ============================================
-    if re.search(r'\b(hola|buenos|hey|saludos|holi|que tal|buenas)\b', mensaje_lower):
-        return "¡Hola! 👋 Bienvenido al asistente.\n\n📋 Escribe **'catalogo'** para ver nuestros productos.\n💰 Escribe **'precio'** para cotizaciones.\n👤 Escribe **'agente'** para hablar con un asesor."
+    if re.search(r'\b(hola|buenos|hey|saludos|holi|que tal|buenas)\b', mensaje):
+        return "¡Hola! 👋 Bienvenido al asistente.\n\n📋 Escribe **'catalogo'** para ver nuestros productos.\n👤 Escribe **'agente'** para hablar con un asesor."
     
     # ============================================
     # INTENCIÓN: AGRADECIMIENTO
     # ============================================
-    if re.search(r'\b(gracias|muchas gracias|te agradezco|mil gracias|agradecido)\b', mensaje_lower):
+    if re.search(r'\b(gracias|muchas gracias|te agradezco|mil gracias|agradecido)\b', mensaje):
         return "¡De nada! 😊 Es un placer ayudarte.\n\n💡 Si necesitas algo más, aquí estoy."
     
     # ============================================
     # INTENCIÓN: AYUDA
     # ============================================
-    if re.search(r'\b(ayuda|que puedes hacer|comandos|opciones|menu)\b', mensaje_lower):
+    if re.search(r'\b(ayuda|que puedes hacer|comandos|opciones|menu)\b', mensaje):
         return get_ayuda()
     
     # ============================================
     # INTENCIÓN: DESPEDIDA
     # ============================================
-    if re.search(r'\b(adios|chao|bye|hasta luego|nos vemos|chau|me voy)\b', mensaje_lower):
-        limpiar_estado(user_id)
+    if re.search(r'\b(adios|chao|bye|hasta luego|nos vemos|chau|me voy)\b', mensaje):
+        if user_id in contexto_usuarios:
+            del contexto_usuarios[user_id]
         return "¡Hasta luego! 👋 Que tengas un excelente día."
     
     # ============================================
@@ -205,50 +160,11 @@ def get_ayuda():
 💡 **Flujo de catálogo:**
 1️⃣ Escribe 'catalogo'
 2️⃣ Responde con un número del 1 al 4
-3️⃣ Sigue las opciones del menú
-
-👋 Escribe 'adios' para salir."""
+3️⃣ Sigue las opciones del menú"""
 
 
 # ============================================
 # ENDPOINTS DE FLASK
-=======
-# CLASIFICADOR SIMPLE
-# ============================================
-
-def clasificar_mensaje(mensaje):
-    mensaje = mensaje.lower()
-    
-    if re.search(r'\b(hola|buenos|hey|saludos|holi|que tal|buenas)\b', mensaje):
-        return "saludo", "¡Hola! Bienvenido al asistente. ¿En qué puedo ayudarte?"
-    
-    if re.search(r'\b(adios|chao|bye|hasta luego|nos vemos|chau)\b', mensaje):
-        return "despedida", "¡Hasta luego! Que tengas un excelente día."
-    
-    if re.search(r'\b(precio|catalogo|producto|comprar|menu|cotizar|muestrame|enseñar)\b', mensaje):
-        return "ventas", "¡Genial! Te ayudo con nuestra selección de productos. Tenemos:\n\n1️⃣ Ropa Deportiva\n2️⃣ Accesorios\n3️⃣ Calzado\n4️⃣ Ofertas Especiales\n\nResponde con el número de la categoría que te interesa."
-    
-    if re.search(r'\b(horario|abren|cierran|atencion|hora|cuando abren)\b', mensaje):
-        return "horario", "Nuestro horario de atención es de Lunes a Viernes de 8:00 AM a 6:00 PM, y Sábados de 9:00 AM a 2:00 PM."
-    
-    if re.search(r'\b(problema|reclamo|queja|error|falla|no funciona|devolucion|dañado)\b', mensaje):
-        return "queja", "Lamento escuchar eso. Voy a escalar tu caso a un agente especializado."
-    
-    if re.search(r'\b(agente|asesor|persona|humano|hablar con alguien|representante)\b', mensaje):
-        return "agente", "Te voy a conectar con un agente humano. Por favor, espera un momento."
-    
-    if re.search(r'\b(telefono|correo|email|direccion|ubicacion|contacto|whatsapp)\b', mensaje):
-        return "contacto", "Puedes contactarnos a través de:\n\n📞 Teléfono: +57 301 234 5678\n📧 Email: info@tienda.com\n📍 Dirección: Calle 123 #45-67, Bogotá"
-    
-    if re.search(r'\b(gracias|muchas gracias|te agradezco|mil gracias)\b', mensaje):
-        return "agradecimiento", "¡De nada! Es un placer ayudarte. Si necesitas algo más, aquí estoy."
-    
-    return "fallback", "No entendí tu mensaje. ¿Podrías reformularlo? O escribe 'agente' para hablar con un humano."
-
-
-# ============================================
-# RUTAS DE FLASK
->>>>>>> 78e66f68f01fd62456385f727dca9e7918acc7ce
 # ============================================
 
 @app.route('/health', methods=['GET'])
@@ -257,12 +173,7 @@ def health_check():
         "status": "ok",
         "service": "whatsapp-assistant",
         "version": "1.0.0",
-<<<<<<< HEAD
-        "message": "Servidor funcionando correctamente",
-        "conversaciones": len(conversaciones)
-=======
         "message": "Servidor funcionando correctamente"
->>>>>>> 78e66f68f01fd62456385f727dca9e7918acc7ce
     })
 
 @app.route('/', methods=['GET'])
@@ -285,53 +196,24 @@ def webhook_twilio():
         from_number = request.values.get('From', '').replace('whatsapp:', '')
         body = request.values.get('Body', '').strip()
 
-<<<<<<< HEAD
-        print(f"\n{'='*60}")
-        print(f"📩 Mensaje de {from_number}: '{body}'")
-        print(f"{'='*60}")
-
-        response_text = procesar_mensaje(body, from_number)
-=======
         print(f"📩 Mensaje de {from_number}: {body}")
 
-        intent, response_text = clasificar_mensaje(body)
-        print(f"🧠 Intención: {intent}")
->>>>>>> 78e66f68f01fd62456385f727dca9e7918acc7ce
+        response_text = procesar_mensaje(body, from_number)
 
         resp = MessagingResponse()
         msg = resp.message()
         msg.body(response_text)
 
-<<<<<<< HEAD
         print(f"✅ Respondiendo a {from_number}")
-=======
->>>>>>> 78e66f68f01fd62456385f727dca9e7918acc7ce
         return str(resp)
 
     except Exception as e:
         print(f"❌ Error: {e}")
         resp = MessagingResponse()
         msg = resp.message()
-<<<<<<< HEAD
         msg.body("⚠️ Ocurrió un error. Por favor, intenta de nuevo.")
         return str(resp)
 
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
-=======
-        msg.body("⚠️ Error. Intenta de nuevo.")
-        return str(resp)
-
-
-# ============================================
-# IMPORTANTE: Esto solo se ejecuta localmente
-# ============================================
-if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
-else:
-    # En producción, gunicorn usa este objeto
-    application = app
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
->>>>>>> 78e66f68f01fd62456385f727dca9e7918acc7ce
