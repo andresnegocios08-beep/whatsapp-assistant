@@ -3,25 +3,22 @@ from twilio.twiml.messaging_response import MessagingResponse
 import sys
 import os
 
-# Agregar src al path
-sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
+# Agregar la carpeta src al path para que Python pueda encontrar los módulos
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
-# Importar el clasificador
+# Intentar importar el NLP
 try:
-    from src.nlp.intent_matcher import IntentMatcher
-    print("✅ NLP cargado correctamente")
-except ImportError as e:
-    print(f"❌ Error importando NLP: {e}")
-    IntentMatcher = None
+    from nlp.intent_matcher import IntentMatcher
+    intent_matcher = IntentMatcher()
+    print("✅ NLP cargado correctamente desde src/nlp/")
+except Exception as e:
+    print(f"⚠️ Error cargando NLP: {e}")
+    intent_matcher = None
 
 app = Flask(__name__)
 
-# Inicializar clasificador
-intent_matcher = IntentMatcher() if IntentMatcher else None
-
 @app.route('/health', methods=['GET'])
 def health_check():
-    """Verificación de estado del servidor"""
     return jsonify({
         "status": "ok",
         "service": "whatsapp-assistant",
@@ -31,7 +28,6 @@ def health_check():
 
 @app.route('/', methods=['GET'])
 def home():
-    """Página de inicio"""
     return """
     <h1>🤖 Asistente de WhatsApp</h1>
     <p>Servidor funcionando correctamente</p>
@@ -46,7 +42,6 @@ def home():
 
 @app.route('/webhook/twilio', methods=['POST'])
 def webhook_twilio():
-    """Endpoint para recibir mensajes de WhatsApp"""
     try:
         from_number = request.values.get('From', '').replace('whatsapp:', '')
         body = request.values.get('Body', '').strip()
@@ -59,7 +54,7 @@ def webhook_twilio():
             intent, response_text = intent_matcher.get_response(body)
             print(f"🧠 Intención detectada: {intent}")
         else:
-            response_text = f"✅ ¡Mensaje recibido!\n\n📱 De: {from_number}\n💬 Mensaje: {body}\n\n🔧 El asistente está en desarrollo."
+            response_text = f"✅ Recibí tu mensaje: {body}\n\n🔧 El NLP no está disponible."
 
         resp = MessagingResponse()
         msg = resp.message()
