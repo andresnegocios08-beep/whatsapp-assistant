@@ -1,21 +1,56 @@
 from flask import Flask, jsonify, request
 from twilio.twiml.messaging_response import MessagingResponse
-import sys
-import os
-
-# Agregar la carpeta src al path para que Python pueda encontrar los módulos
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
-
-# Intentar importar el NLP
-try:
-    from nlp.intent_matcher import IntentMatcher
-    intent_matcher = IntentMatcher()
-    print("✅ NLP cargado correctamente desde src/nlp/")
-except Exception as e:
-    print(f"⚠️ Error cargando NLP: {e}")
-    intent_matcher = None
+import re
 
 app = Flask(__name__)
+
+# ============================================
+# CLASIFICADOR SIMPLE (sin dependencias externas)
+# ============================================
+
+def clasificar_mensaje(mensaje):
+    """Clasifica la intención usando expresiones regulares"""
+    mensaje = mensaje.lower()
+    
+    # Saludos
+    if re.search(r'\b(hola|buenos|hey|saludos|holi|que tal|buenas)\b', mensaje):
+        return "saludo", "¡Hola! Bienvenido al asistente. ¿En qué puedo ayudarte?"
+    
+    # Despedidas
+    if re.search(r'\b(adios|chao|bye|hasta luego|nos vemos|chau)\b', mensaje):
+        return "despedida", "¡Hasta luego! Que tengas un excelente día."
+    
+    # Ventas/Catálogo
+    if re.search(r'\b(precio|catalogo|producto|comprar|menu|cotizar|muestrame|enseñar)\b', mensaje):
+        return "ventas", "¡Genial! Te ayudo con nuestra selección de productos. Tenemos:\n\n1️⃣ Ropa Deportiva\n2️⃣ Accesorios\n3️⃣ Calzado\n4️⃣ Ofertas Especiales\n\nResponde con el número de la categoría que te interesa."
+    
+    # Horario
+    if re.search(r'\b(horario|abren|cierran|atencion|hora|cuando abren)\b', mensaje):
+        return "horario", "Nuestro horario de atención es de Lunes a Viernes de 8:00 AM a 6:00 PM, y Sábados de 9:00 AM a 2:00 PM."
+    
+    # Quejas
+    if re.search(r'\b(problema|reclamo|queja|error|falla|no funciona|devolucion|dañado)\b', mensaje):
+        return "queja", "Lamento escuchar eso. Voy a escalar tu caso a un agente especializado. Por favor, espera un momento."
+    
+    # Agente
+    if re.search(r'\b(agente|asesor|persona|humano|hablar con alguien|representante)\b', mensaje):
+        return "agente", "Te voy a conectar con un agente humano. Por favor, espera un momento mientras te asignamos al mejor asesor para ti."
+    
+    # Contacto
+    if re.search(r'\b(telefono|correo|email|direccion|ubicacion|contacto|whatsapp)\b', mensaje):
+        return "contacto", "Puedes contactarnos a través de:\n\n📞 Teléfono: +57 301 234 5678\n📧 Email: info@tienda.com\n📍 Dirección: Calle 123 #45-67, Bogotá"
+    
+    # Agradecimiento
+    if re.search(r'\b(gracias|muchas gracias|te agradezco|mil gracias)\b', mensaje):
+        return "agradecimiento", "¡De nada! Es un placer ayudarte. Si necesitas algo más, aquí estoy. ¡Que tengas un excelente día!"
+    
+    # Fallback
+    return "fallback", "No entendí tu mensaje. ¿Podrías reformularlo? O escribe 'agente' para hablar con un humano."
+
+
+# ============================================
+# RUTAS DE FLASK
+# ============================================
 
 @app.route('/health', methods=['GET'])
 def health_check():
@@ -49,13 +84,11 @@ def webhook_twilio():
 
         print(f"📩 Mensaje recibido de {from_number}: {body}")
 
-        # Usar NLP si está disponible
-        if intent_matcher:
-            intent, response_text = intent_matcher.get_response(body)
-            print(f"🧠 Intención detectada: {intent}")
-        else:
-            response_text = f"✅ Recibí tu mensaje: {body}\n\n🔧 El NLP no está disponible."
+        # Clasificar intención
+        intent, response_text = clasificar_mensaje(body)
+        print(f"🧠 Intención detectada: {intent}")
 
+        # Enviar respuesta
         resp = MessagingResponse()
         msg = resp.message()
         msg.body(response_text)
