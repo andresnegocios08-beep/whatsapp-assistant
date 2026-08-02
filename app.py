@@ -5,163 +5,177 @@ import re
 app = Flask(__name__)
 
 # ============================================
-# CONTEXTO EN MEMORIA
+# GESTOR DE CONVERSACIONES (MÁS ROBUSTO)
 # ============================================
 
-contexto_usuarios = {}
+conversaciones = {}
 
-def obtener_contexto(user_id):
-    if user_id not in contexto_usuarios:
-        contexto_usuarios[user_id] = {
-            "ultima_intencion": None,
+def obtener_estado(user_id):
+    """Obtiene el estado de la conversación de un usuario"""
+    if user_id not in conversaciones:
+        conversaciones[user_id] = {
+            "ultimo_mensaje": None,
+            "intencion_actual": None,
             "categoria": None,
-            "paso": None
+            "esperando": None
         }
-        print(f"🆕 Nuevo contexto creado para {user_id}")
-    return contexto_usuarios[user_id]
+    return conversaciones[user_id]
 
-def guardar_contexto(user_id, clave, valor):
-    contexto = obtener_contexto(user_id)
-    contexto[clave] = valor
-    print(f"💾 Contexto guardado: {clave} = {valor}")
+def guardar_estado(user_id, clave, valor):
+    estado = obtener_estado(user_id)
+    estado[clave] = valor
+    print(f"💾 {user_id}: {clave} = {valor}")
 
-def mostrar_contexto(user_id):
-    ctx = obtener_contexto(user_id)
-    print(f"📋 Contexto actual de {user_id}: {ctx}")
+def limpiar_estado(user_id):
+    conversaciones[user_id] = {
+        "ultimo_mensaje": None,
+        "intencion_actual": None,
+        "categoria": None,
+        "esperando": None
+    }
+    print(f"🧹 Estado limpiado para {user_id}")
 
 # ============================================
-# CLASIFICADOR CORREGIDO
+# PROCESADOR DE MENSAJES
 # ============================================
 
-def clasificar_mensaje(mensaje, user_id):
-    mensaje = mensaje.lower().strip()
+def procesar_mensaje(mensaje, user_id):
+    mensaje = mensaje.strip()
+    mensaje_lower = mensaje.lower()
     
-    # Obtener contexto
-    ctx = obtener_contexto(user_id)
-    ultima_intencion = ctx.get("ultima_intencion")
+    # Obtener estado actual
+    estado = obtener_estado(user_id)
+    esperando = estado.get("esperando")
+    intencion_actual = estado.get("intencion_actual")
     
-    print(f"\n📩 Procesando: '{mensaje}'")
-    print(f"🔍 Última intención: {ultima_intencion}")
-    
-    # ============================================
-    # CASO ESPECIAL: RESPUESTA CON NÚMERO DESPUÉS DE CATÁLOGO
-    # ============================================
-    if ultima_intencion == "ventas" and mensaje in ["1", "2", "3", "4"]:
-        categorias = {
-            "1": "Ropa Deportiva",
-            "2": "Accesorios",
-            "3": "Calzado",
-            "4": "Ofertas Especiales"
-        }
-        categoria = categorias[mensaje]
-        print(f"🎯 Categoría seleccionada: {categoria}")
-        
-        # Guardar nuevo contexto
-        guardar_contexto(user_id, "ultima_intencion", "categoria_seleccionada")
-        guardar_contexto(user_id, "categoria", categoria)
-        
-        return f"✅ Has seleccionado: **{categoria}**\n\n📋 ¿Qué te gustaría hacer?\n\n1️⃣ Ver productos disponibles\n2️⃣ Pedir información sobre precios\n3️⃣ Volver al catálogo principal\n\n💡 Responde con el número de tu opción."
+    print(f"\n📩 '{mensaje}' | Esperando: {esperando} | Intención: {intencion_actual}")
     
     # ============================================
-    # CASO: DESPUÉS DE SELECCIONAR CATEGORÍA
+    # CASO 1: ESPERANDO RESPUESTA DE CATEGORÍA
     # ============================================
-    if ultima_intencion == "categoria_seleccionada":
+    if esperando == "categoria":
+        if mensaje in ["1", "2", "3", "4"]:
+            categorias = {
+                "1": "Ropa Deportiva",
+                "2": "Accesorios",
+                "3": "Calzado",
+                "4": "Ofertas Especiales"
+            }
+            categoria = categorias[mensaje]
+            guardar_estado(user_id, "categoria", categoria)
+            guardar_estado(user_id, "esperando", "menu_categoria")
+            guardar_estado(user_id, "intencion_actual", "categoria_seleccionada")
+            
+            return f"✅ Has seleccionado: **{categoria}**\n\n📋 ¿Qué te gustaría hacer?\n\n1️⃣ Ver productos disponibles\n2️⃣ Pedir información sobre precios\n3️⃣ Volver al catálogo principal\n\n💡 Responde con el número de tu opción."
+        else:
+            return "⚠️ Por favor, responde con un **número del 1 al 4** para seleccionar la categoría."
+    
+    # ============================================
+    # CASO 2: ESPERANDO OPCIÓN DEL MENÚ DE CATEGORÍA
+    # ============================================
+    if esperando == "menu_categoria":
         if mensaje == "1":
-            categoria = ctx.get("categoria", "esta categoría")
-            guardar_contexto(user_id, "ultima_intencion", "ver_productos")
-            return f"📦 **Productos en {categoria}:**\n\nPara ver el catálogo completo, visita nuestro sitio web.\n\n🔍 ¿Buscas algo en particular? Dímelo y te ayudo.\n\n💡 Escribe 'volver' para regresar al catálogo."
+            categoria = estado.get("categoria", "esta categoría")
+            guardar_estado(user_id, "esperando", None)
+            return f"📦 **Productos en {categoria}:**\n\nActualmente no tenemos el listado completo disponible por WhatsApp.\n\n🔍 ¿Buscas algo en particular? Escríbelo y te ayudo.\n\n💡 Escribe **'volver'** para regresar al catálogo."
         
         elif mensaje == "2":
-            guardar_contexto(user_id, "ultima_intencion", "info_precios")
-            return "💰 **Información de precios:**\n\nNuestros precios varían según el producto.\n\n📋 Para cotizaciones específicas, escríbenos el nombre del producto que te interesa."
+            guardar_estado(user_id, "esperando", None)
+            return "💰 **Información de precios:**\n\nPara obtener una cotización exacta, escríbenos el **nombre del producto** que te interesa.\n\n📋 Ejemplo: 'precio de la camisa deportiva'"
         
         elif mensaje == "3":
-            guardar_contexto(user_id, "ultima_intencion", "ventas")
-            return "🔄 Volviendo al catálogo principal...\n\n" + get_catalogo()
+            guardar_estado(user_id, "esperando", "categoria")
+            guardar_estado(user_id, "intencion_actual", "ventas")
+            return "🔄 Volviendo al catálogo...\n\n" + get_catalogo()
         
-        elif "volver" in mensaje or "atras" in mensaje:
-            guardar_contexto(user_id, "ultima_intencion", "ventas")
-            return "🔄 Volviendo al catálogo principal...\n\n" + get_catalogo()
+        elif "volver" in mensaje_lower or "atras" in mensaje_lower:
+            guardar_estado(user_id, "esperando", "categoria")
+            guardar_estado(user_id, "intencion_actual", "ventas")
+            return "🔄 Volviendo al catálogo...\n\n" + get_catalogo()
+        
+        else:
+            return "⚠️ Opción no válida.\n\n📋 Escribe:\n1️⃣ Para ver productos\n2️⃣ Para información de precios\n3️⃣ Para volver al catálogo"
     
     # ============================================
-    # SALUDO
+    # CASO 3: ESPERANDO PRODUCTO PARA PRECIO
     # ============================================
-    if re.search(r'\b(hola|buenos|hey|saludos|holi|que tal|buenas)\b', mensaje):
-        guardar_contexto(user_id, "ultima_intencion", "saludo")
-        return "¡Hola! 👋 Bienvenido al asistente.\n\n📋 Escribe **'catalogo'** para ver nuestros productos.\n💡 Escribe **'ayuda'** para ver qué puedo hacer."
+    if esperando == "precio":
+        guardar_estado(user_id, "esperando", None)
+        return f"💰 **Cotización para '{mensaje}':**\n\nPara obtener el precio exacto, por favor contáctanos directamente:\n📱 WhatsApp: +57 301 234 5678\n📧 Email: info@tienda.com\n\n💡 ¿Necesitas algo más?"
     
     # ============================================
-    # CATÁLOGO (CON GUARDADO EXPLÍCITO)
+    # INTENCIÓN: CATÁLOGO
     # ============================================
-    if re.search(r'\b(catalogo|catálogo|producto|menu|muestrame|enseñar|ver productos|quiero comprar|lista|que venden|tienen)\b', mensaje):
-        # 🔴 ¡GUARDAR EXPLÍCITAMENTE LA INTENCIÓN!
-        guardar_contexto(user_id, "ultima_intencion", "ventas")
-        print(f"✅ Intención 'ventas' guardada para {user_id}")
+    if re.search(r'\b(catalogo|catálogo|producto|menu|muestrame|enseñar|ver productos|quiero comprar|lista|que venden|tienen)\b', mensaje_lower):
+        guardar_estado(user_id, "intencion_actual", "ventas")
+        guardar_estado(user_id, "esperando", "categoria")
+        guardar_estado(user_id, "categoria", None)
         return get_catalogo()
     
     # ============================================
-    # PRECIO
+    # INTENCIÓN: PRECIO
     # ============================================
-    if re.search(r'\b(precio|costo|valor|cuanto cuesta|precios|cotizar|cotizacion)\b', mensaje):
-        guardar_contexto(user_id, "ultima_intencion", "precio")
-        return "💰 Te ayudo con los precios.\n\n📋 Escribe el **nombre del producto** que te interesa."
+    if re.search(r'\b(precio|costo|valor|cuanto cuesta|precios|cotizar|cotizacion)\b', mensaje_lower):
+        guardar_estado(user_id, "esperando", "precio")
+        return "💰 **Cotizaciones:**\n\n📋 Escríbenos el **nombre del producto** que deseas cotizar.\n\nEjemplo: 'camisa deportiva'"
     
     # ============================================
-    # HORARIO
+    # INTENCIÓN: HORARIO
     # ============================================
-    if re.search(r'\b(horario|abren|cierran|atencion|hora|cuando abren|disponibilidad|horas)\b', mensaje):
-        guardar_contexto(user_id, "ultima_intencion", "horario")
+    if re.search(r'\b(horario|abren|cierran|atencion|hora|cuando abren|disponibilidad|horas)\b', mensaje_lower):
         return "🕐 **Horario de atención:**\n\n📅 Lunes a Viernes: 8:00 AM - 6:00 PM\n📅 Sábados: 9:00 AM - 2:00 PM\n📅 Domingos: Cerrado"
     
     # ============================================
-    # QUEJA
+    # INTENCIÓN: CONTACTO
     # ============================================
-    if re.search(r'\b(problema|reclamo|queja|error|falla|no funciona|devolucion|dañado|insatisfecho|malo)\b', mensaje):
-        guardar_contexto(user_id, "ultima_intencion", "queja")
-        return "📞 Lamento escuchar eso. Voy a escalar tu caso a un agente especializado.\n\n⏳ Por favor, espera un momento."
-    
-    # ============================================
-    # AGENTE
-    # ============================================
-    if re.search(r'\b(agente|asesor|persona|humano|hablar con alguien|representante)\b', mensaje):
-        guardar_contexto(user_id, "ultima_intencion", "agente")
-        return "👤 Te voy a conectar con un agente humano.\n\n⏳ Por favor, espera un momento."
-    
-    # ============================================
-    # CONTACTO
-    # ============================================
-    if re.search(r'\b(telefono|correo|email|direccion|ubicacion|contacto|whatsapp|llamar|donde estan)\b', mensaje):
-        guardar_contexto(user_id, "ultima_intencion", "contacto")
+    if re.search(r'\b(telefono|correo|email|direccion|ubicacion|contacto|whatsapp|llamar|donde estan)\b', mensaje_lower):
         return "📞 **Información de contacto:**\n\n📱 Teléfono: +57 301 234 5678\n📧 Email: info@tienda.com\n📍 Dirección: Calle 123 #45-67, Bogotá"
     
     # ============================================
-    # AGRADECIMIENTO
+    # INTENCIÓN: QUEJA
     # ============================================
-    if re.search(r'\b(gracias|muchas gracias|te agradezco|mil gracias|agradecido)\b', mensaje):
+    if re.search(r'\b(problema|reclamo|queja|error|falla|no funciona|devolucion|dañado|insatisfecho|malo)\b', mensaje_lower):
+        return "📞 Lamento escuchar eso. Voy a escalar tu caso a un agente especializado.\n\n⏳ Por favor, espera un momento."
+    
+    # ============================================
+    # INTENCIÓN: AGENTE
+    # ============================================
+    if re.search(r'\b(agente|asesor|persona|humano|hablar con alguien|representante)\b', mensaje_lower):
+        return "👤 Te voy a conectar con un agente humano.\n\n⏳ Por favor, espera un momento."
+    
+    # ============================================
+    # INTENCIÓN: SALUDO
+    # ============================================
+    if re.search(r'\b(hola|buenos|hey|saludos|holi|que tal|buenas)\b', mensaje_lower):
+        return "¡Hola! 👋 Bienvenido al asistente.\n\n📋 Escribe **'catalogo'** para ver nuestros productos.\n💰 Escribe **'precio'** para cotizaciones.\n👤 Escribe **'agente'** para hablar con un asesor."
+    
+    # ============================================
+    # INTENCIÓN: AGRADECIMIENTO
+    # ============================================
+    if re.search(r'\b(gracias|muchas gracias|te agradezco|mil gracias|agradecido)\b', mensaje_lower):
         return "¡De nada! 😊 Es un placer ayudarte.\n\n💡 Si necesitas algo más, aquí estoy."
     
     # ============================================
-    # AYUDA
+    # INTENCIÓN: AYUDA
     # ============================================
-    if re.search(r'\b(ayuda|que puedes hacer|comandos|opciones|menu)\b', mensaje):
+    if re.search(r'\b(ayuda|que puedes hacer|comandos|opciones|menu)\b', mensaje_lower):
         return get_ayuda()
     
     # ============================================
-    # DESPEDIDA
+    # INTENCIÓN: DESPEDIDA
     # ============================================
-    if re.search(r'\b(adios|chao|bye|hasta luego|nos vemos|chau|me voy)\b', mensaje):
-        contexto_usuarios[user_id] = {"ultima_intencion": None, "categoria": None, "paso": None}
+    if re.search(r'\b(adios|chao|bye|hasta luego|nos vemos|chau|me voy)\b', mensaje_lower):
+        limpiar_estado(user_id)
         return "¡Hasta luego! 👋 Que tengas un excelente día."
     
     # ============================================
     # FALLBACK
     # ============================================
-    print(f"⚠️ No se encontró coincidencia para '{mensaje}'")
     return "🤔 No entendí tu mensaje.\n\n📋 Escribe **'ayuda'** para ver qué puedo hacer.\n👤 Escribe **'agente'** para hablar con un humano."
 
 
 def get_catalogo():
-    return """🛍️ **¡Bienvenido a nuestro catálogo!**
+    return """🛍️ **Catálogo de productos:**
 
 📋 **Categorías disponibles:**
 
@@ -170,28 +184,29 @@ def get_catalogo():
 3️⃣ Calzado
 4️⃣ Ofertas Especiales
 
-💡 **Responde con el número** de la categoría que te interesa.
-👤 Escribe **'agente'** para hablar con un asesor."""
+💡 **Responde con el número** de la categoría que te interesa."""
 
 
 def get_ayuda():
     return """🤖 **Qué puedo hacer por ti:**
 
-📦 **Catálogo** - Ver productos y categorías
-💰 **Precios** - Consultar precios y cotizaciones
-🕐 **Horario** - Conocer nuestra atención
-📍 **Contacto** - Teléfono, email y dirección
-👤 **Agente** - Hablar con un asesor humano
+📦 **Catálogo** - Escribe 'catalogo'
+💰 **Precios** - Escribe 'precio'
+🕐 **Horario** - Escribe 'horario'
+📍 **Contacto** - Escribe 'contacto'
+👤 **Agente** - Escribe 'agente'
+❓ **Ayuda** - Escribe 'ayuda'
 
-💡 **Cómo usar el asistente:**
+💡 **Flujo de catálogo:**
+1️⃣ Escribe 'catalogo'
+2️⃣ Responde con un número del 1 al 4
+3️⃣ Sigue las opciones del menú
 
-1️⃣ Escribe **'catalogo'** para ver categorías
-2️⃣ Responde con el **número** de la categoría
-3️⃣ Sigue las opciones del menú"""
+👋 Escribe 'adios' para salir."""
 
 
 # ============================================
-# ENDPOINTS
+# ENDPOINTS DE FLASK
 # ============================================
 
 @app.route('/health', methods=['GET'])
@@ -201,7 +216,7 @@ def health_check():
         "service": "whatsapp-assistant",
         "version": "1.0.0",
         "message": "Servidor funcionando correctamente",
-        "sessions_activas": len(contexto_usuarios)
+        "conversaciones": len(conversaciones)
     })
 
 @app.route('/', methods=['GET'])
@@ -224,18 +239,17 @@ def webhook_twilio():
         from_number = request.values.get('From', '').replace('whatsapp:', '')
         body = request.values.get('Body', '').strip()
 
-        print(f"\n{'='*50}")
+        print(f"\n{'='*60}")
         print(f"📩 Mensaje de {from_number}: '{body}'")
-        print(f"{'='*50}")
+        print(f"{'='*60}")
 
-        response_text = clasificar_mensaje(body, from_number)
+        response_text = procesar_mensaje(body, from_number)
 
         resp = MessagingResponse()
         msg = resp.message()
         msg.body(response_text)
 
         print(f"✅ Respondiendo a {from_number}")
-        print(f"{'='*50}\n")
         return str(resp)
 
     except Exception as e:
