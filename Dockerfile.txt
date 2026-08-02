@@ -1,0 +1,15 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Copiar requirements.txt primero (para cachear)
+COPY requirements.txt .
+
+# Instalar dependencias
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copiar el resto del código
+COPY . .
+
+# Comando para iniciar la aplicación
+CMD ["gunicorn", "-b", "0.0.0.0:$PORT", "app:app"]
