@@ -2,57 +2,63 @@ from flask import Flask, jsonify, request
 from twilio.twiml.messaging_response import MessagingResponse
 import re
 import os
-import psycopg2
-from psycopg2.extras import RealDictCursor
+import sqlite3
+from datetime import datetime
 
 app = Flask(__name__)
 app.secret_key = os.getenv('SECRET_KEY', 'mi-clave-secreta')
 
 # ============================================
-# CONEXIÓN DIRECTA A BASE DE DATOS (SIN IMPORT)
+# BASE DE DATOS SQLITE (SIN DEPENDENCIAS EXTERNAS)
 # ============================================
 
-def get_db_connection():
-    """Establece conexión directa con la base de datos"""
-    try:
-        database_url = os.getenv('DATABASE_URL', '')
-        if not database_url:
-            print("⚠️ DATABASE_URL no configurado")
-            return None
-        conn = psycopg2.connect(database_url)
-        print("✅ Conexión a base de datos establecida")
-        return conn
-    except Exception as e:
-        print(f"❌ Error conectando a base de datos: {e}")
-        return None
+def init_db():
+    """Inicializa la base de datos SQLite"""
+    conn = sqlite3.connect('conversaciones.db')
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS conversaciones (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            message TEXT NOT NULL,
+            intent TEXT,
+            response TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS usuarios (
+            user_id TEXT PRIMARY KEY,
+            phone_number TEXT,
+            first_interaction TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            last_interaction TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            total_messages INTEGER DEFAULT 0
+        )
+    ''')
+    
+    conn.commit()
+    conn.close()
+    print("✅ Base de datos SQLite inicializada")
 
 def save_conversation(user_id, message, intent, response):
-    """Guarda una conversación en la base de datos"""
+    """Guarda una conversación en SQLite"""
     try:
-        conn = get_db_connection()
-        if not conn:
-            return False
-        
+        conn = sqlite3.connect('conversaciones.db')
         cursor = conn.cursor()
         
-        # Insertar conversación
-        cursor.execute("""
+        cursor.execute('''
             INSERT INTO conversaciones (user_id, message, intent, response, created_at)
-            VALUES (%s, %s, %s, %s, NOW())
-        """, (user_id, message, intent, response))
+            VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ''', (user_id, message, intent, response))
         
-        # Actualizar usuario
-        cursor.execute("""
-            INSERT INTO usuarios (user_id, phone_number, first_interaction, last_interaction, total_messages)
-            VALUES (%s, %s, NOW(), NOW(), 1)
-            ON CONFLICT (user_id) 
-            DO UPDATE SET 
-                last_interaction = NOW(),
-                total_messages = usuarios.total_messages + 1
-        """, (user_id, user_id))
+        cursor.execute('''
+            INSERT OR REPLACE INTO usuarios (user_id, phone_number, last_interaction, total_messages)
+            VALUES (?, ?, CURRENT_TIMESTAMP, COALESCE((SELECT total_messages + 1 FROM usuarios WHERE user_id = ?), 1))
+        ''', (user_id, user_id, user_id))
         
         conn.commit()
-        cursor.close()
         conn.close()
         print(f"📝 Conversación guardada para {user_id}")
         return True
@@ -61,19 +67,16 @@ def save_conversation(user_id, message, intent, response):
         return False
 
 def get_stats():
-    """Obtiene estadísticas de la base de datos"""
+    """Obtiene estadísticas de SQLite"""
     try:
-        conn = get_db_connection()
-        if not conn:
-            return {}
+        conn = sqlite3.connect('conversaciones.db')
+        cursor = conn.cursor()
         
-        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        cursor.execute("SELECT COUNT(*) FROM conversaciones")
+        total = cursor.fetchone()[0]
         
-        cursor.execute("SELECT COUNT(*) as total FROM conversaciones")
-        total = cursor.fetchone()['total']
-        
-        cursor.execute("SELECT COUNT(*) as total FROM usuarios")
-        users = cursor.fetchone()['total']
+        cursor.execute("SELECT COUNT(*) FROM usuarios")
+        users = cursor.fetchone()[0]
         
         cursor.execute("""
             SELECT intent, COUNT(*) as count 
@@ -82,9 +85,8 @@ def get_stats():
             GROUP BY intent 
             ORDER BY count DESC
         """)
-        intents = {row['intent']: row['count'] for row in cursor.fetchall()}
+        intents = {row[0]: row[1] for row in cursor.fetchall()}
         
-        cursor.close()
         conn.close()
         
         return {
@@ -96,6 +98,9 @@ def get_stats():
     except Exception as e:
         print(f"❌ Error obteniendo estadísticas: {e}")
         return {}
+
+# Inicializar DB al iniciar
+init_db()
 
 # ============================================
 # CONTEXTO EN MEMORIA
@@ -219,23 +224,17 @@ def get_ayuda():
 
 
 # ============================================
-# ENDPOINTS DE FLASK
+# ENDPOINTS
 # ============================================
 
 @app.route('/health', methods=['GET'])
 def health_check():
-    # Probar conexión a base de datos
-    conn = get_db_connection()
-    db_status = "connected" if conn else "not connected"
-    if conn:
-        conn.close()
-    
     return jsonify({
         "status": "ok",
         "service": "whatsapp-assistant",
         "version": "1.0.0",
         "message": "Servidor funcionando correctamente",
-        "database": db_status
+        "database": "sqlite"
     })
 
 @app.route('/', methods=['GET'])
@@ -263,7 +262,6 @@ def webhook_twilio():
 
         response_text = clasificar_mensaje(body, from_number)
         
-        # Guardar en base de datos
         intent = contexto_usuarios.get(from_number, {}).get("ultima_intencion", "unknown")
         save_conversation(from_number, body, intent, response_text)
 
@@ -284,7 +282,6 @@ def webhook_twilio():
 
 @app.route('/stats', methods=['GET'])
 def get_stats_endpoint():
-    """Endpoint para ver estadísticas"""
     stats = get_stats()
     return jsonify(stats)
 
