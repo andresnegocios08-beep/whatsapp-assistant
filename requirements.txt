@@ -5,3 +5,4 @@ PyYAML==6.0.1
 python-dateutil==2.8.2
 gunicorn==23.0.0
 setuptools
+psycopg2-binary==2.9.9
