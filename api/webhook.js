@@ -79,7 +79,7 @@ REGLAS:
 3. Si no hay info relevante, indica amablemente que no tienes esa información.
 4. No inventes precios, horarios ni ubicaciones.`;
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
 
   try {
     const response = await fetch(url, {
@@ -188,7 +188,7 @@ Formato exacto:
 }
 Si algún dato no se puede leer, usa "No legible". Si no es un recibo, responde: {"error": "no es recibo"}`;
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
 
     const response = await fetch(url, {
       method: 'POST',
